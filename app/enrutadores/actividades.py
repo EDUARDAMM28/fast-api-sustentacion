@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException
 
-from app.listas import tareas, actividades
-from app.modelos.actividades import (
-    Actividad,
-    ActividadActualizar,
-    ActividadRespuesta
-)
+from app.conexion_db import SesionDependencia
+from app.modelos.actividades import Actividad,ActividadCrear,ActividadActualizar,ActividadRespuesta
+from app.modelos.tareas import Tarea
+from sqlmodel import select
 
 router = APIRouter(
     tags=["Actividades"]
@@ -18,12 +16,13 @@ router = APIRouter(
 )
 def crear_actividad(
     tarea_id: int,
-    actividad: Actividad
+    actividad: ActividadCrear,
+    sesion: SesionDependencia
 ):
 
-    tarea = next(
-        (t for t in tareas if t["id"] == tarea_id),
-        None
+    tarea = sesion.get(
+        Tarea,
+        tarea_id
     )
 
     if tarea is None:
@@ -32,17 +31,18 @@ def crear_actividad(
             detail="La tarea no existe"
         )
 
-    nueva_actividad = {
-        "id": len(actividades) + 1,
-        "nombre": actividad.nombre,
-        "descripcion": actividad.descripcion,
-        "estado": actividad.estado,
-        "fecha": actividad.fecha,
-        "completada": actividad.completada,
-        "tarea_id": tarea_id
-    }
+    nueva_actividad = Actividad(
+        nombre=actividad.nombre,
+        descripcion=actividad.descripcion,
+        estado=actividad.estado,
+        fecha=actividad.fecha,
+        completada=actividad.completada,
+        tarea_id=tarea_id
+    )
 
-    actividades.append(nueva_actividad)
+    sesion.add(nueva_actividad)
+    sesion.commit()
+    sesion.refresh(nueva_actividad)
 
     return nueva_actividad
 
@@ -51,7 +51,13 @@ def crear_actividad(
     "/actividades/",
     response_model=list[ActividadRespuesta]
 )
-def listar_actividades():
+def listar_actividades(
+    sesion: SesionDependencia
+):
+
+    actividades = sesion.exec(
+        select(Actividad)
+    ).all()
 
     return actividades
 
@@ -61,12 +67,13 @@ def listar_actividades():
     response_model=ActividadRespuesta
 )
 def obtener_actividad(
-    actividad_id: int
+    actividad_id: int,
+    sesion: SesionDependencia
 ):
 
-    actividad = next(
-        (a for a in actividades if a["id"] == actividad_id),
-        None
+    actividad = sesion.get(
+        Actividad,
+        actividad_id
     )
 
     if actividad is None:
@@ -84,12 +91,13 @@ def obtener_actividad(
 )
 def actualizar_actividad(
     actividad_id: int,
-    datos: ActividadActualizar
+    datos: ActividadActualizar,
+    sesion: SesionDependencia
 ):
 
-    actividad = next(
-        (a for a in actividades if a["id"] == actividad_id),
-        None
+    actividad = sesion.get(
+        Actividad,
+        actividad_id
     )
 
     if actividad is None:
@@ -98,23 +106,24 @@ def actualizar_actividad(
             detail="La actividad no existe"
         )
 
-    actividad["nombre"] = datos.nombre
-    actividad["descripcion"] = datos.descripcion
-    actividad["estado"] = datos.estado
-    actividad["fecha"] = datos.fecha
-    actividad["completada"] = datos.completada
+    actividad.completada = datos.completada
+
+    sesion.add(actividad)
+    sesion.commit()
+    sesion.refresh(actividad)
 
     return actividad
 
 
 @router.delete("/actividades/{actividad_id}")
 def eliminar_actividad(
-    actividad_id: int
+    actividad_id: int,
+    sesion: SesionDependencia
 ):
 
-    actividad = next(
-        (a for a in actividades if a["id"] == actividad_id),
-        None
+    actividad = sesion.get(
+        Actividad,
+        actividad_id
     )
 
     if actividad is None:
@@ -123,7 +132,8 @@ def eliminar_actividad(
             detail="La actividad no existe"
         )
 
-    actividades.remove(actividad)
+    sesion.delete(actividad)
+    sesion.commit()
 
     return {
         "mensaje": "Actividad eliminada correctamente"
